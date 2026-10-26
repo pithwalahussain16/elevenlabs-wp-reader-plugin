@@ -1,10 +1,45 @@
 <?php
+
 if (!defined('ABSPATH')) exit;
 
-define('ELWR_VERSION', '1.2.0');
+define('ELWR_VERSION', '1.3.0');
 define('ELWR_DIR', plugin_dir_path(__FILE__));
 define('ELWR_URL', plugin_dir_url(__FILE__));
 
+function elwr_label_defaults() {
+    return array(
+        'listen'=>'Listen to this page', 'play'=>'Play article audio', 'pause'=>'Pause audio',
+        'ready'=>'Audio ready', 'playing'=>'Playing audio', 'paused'=>'Audio paused',
+        'finished'=>'Finished listening', 'loading'=>'Loading cached MP3…',
+        'unavailable'=>'Audio is not ready yet. Publish/update the content or ask the site administrator to generate it.',
+        'retry'=>'Audio is ready. Press play again to start.', 'back'=>'Back 15 seconds',
+        'forward'=>'Forward 15 seconds', 'speed'=>'Playback speed', 'progress'=>'Audio progress',
+        'noscript'=>'Audio player requires JavaScript.', 'details'=>'Get audio details'
+    );
+}
+function elwr_label($key) {
+    $defaults=elwr_label_defaults();
+    if (!isset($defaults[$key])) return '';
+    $saved=get_option('elwr_labels',array());
+    $value=isset($saved[$key]) && is_string($saved[$key]) && $saved[$key]!=='' ? $saved[$key] : $defaults[$key];
+    return function_exists('pll__') ? pll__($value) : $value;
+}
+function elwr_register_polylang_labels() {
+    if (!function_exists('pll_register_string')) return;
+    $defaults=elwr_label_defaults(); $saved=get_option('elwr_labels',array());
+    foreach ($defaults as $key=>$fallback) {
+        $value=isset($saved[$key]) && is_string($saved[$key]) && $saved[$key]!=='' ? $saved[$key] : $fallback;
+        pll_register_string('elwr_'.$key,$value,'ElevenLabs Reader',false);
+    }
+}
+add_action('admin_init','elwr_register_polylang_labels',20);
+add_action('init', 'elwr_register_polylang_labels',20);
+function elwr_sanitize_labels($input) {
+    $out=array(); foreach (elwr_label_defaults() as $key=>$fallback) {
+        $out[$key]=isset($input[$key]) && is_string($input[$key]) ? sanitize_text_field($input[$key]) : $fallback;
+        if ($out[$key]==='') $out[$key]=$fallback;
+    } return $out;
+}
 function elwr_defaults() {
     return array(
         'api_key'=>'', 'voice_id'=>'JBFqnCBsd6RMkjVDRZzb', 'model_id'=>'eleven_multilingual_v2',
@@ -27,7 +62,7 @@ function elwr_sanitize_settings($input) {
     return $out;
 }
 add_action('admin_menu', function() { add_options_page('ElevenLabs WP Reader', 'ElevenLabs Reader', 'manage_options', 'elwr-settings', 'elwr_settings_page'); });
-add_action('admin_init', function() { register_setting('elwr_group', 'elwr_settings', array('sanitize_callback'=>'elwr_sanitize_settings')); });
+add_action('admin_init', function() { register_setting('elwr_group', 'elwr_settings', array('sanitize_callback'=>'elwr_sanitize_settings')); register_setting('elwr_labels_group','elwr_labels',array('sanitize_callback'=>'elwr_sanitize_labels'));  });
 function elwr_settings_page() {
     if (!current_user_can('manage_options')) return; $s = elwr_settings(); ?>
     <div class="wrap"><h1>ElevenLabs WP Reader</h1>
@@ -46,6 +81,13 @@ function elwr_settings_page() {
       <?php foreach (array('player_enabled'=>'Display the audio player','show_title'=>'Show post/page title','show_status'=>'Show player status text','show_speed'=>'Show playback speed selector','show_skip'=>'Show 15-second skip controls') as $key=>$label): ?><tr><th><?php echo esc_html($label); ?></th><td><label><input type="checkbox" name="elwr_settings[<?php echo esc_attr($key); ?>]" value="1" <?php checked($s[$key],'1'); ?>> Enabled</label></td></tr><?php endforeach; ?>
       <tr><th><label for="elwr_theme_color">Player color</label></th><td><input type="color" id="elwr_theme_color" name="elwr_settings[theme_color]" value="<?php echo esc_attr($s['theme_color']); ?>"></td></tr>
     </table><?php submit_button('Save Settings'); ?></form>
+    <hr><h2>Frontend player labels &amp; Polylang</h2>
+    <p>Edit the default labels below. If Polylang is installed, save first and then open <strong>Languages → Translations</strong>, group <strong>ElevenLabs Reader</strong>, to translate each label. Translating labels does not regenerate MP3 files.</p>
+    <form method="post" action="options.php"><?php settings_fields('elwr_labels_group'); $saved_labels=get_option('elwr_labels',array()); ?>
+    <table class="form-table"><?php foreach (elwr_label_defaults() as $key=>$fallback): ?>
+      <tr><th><label for="elwr_label_<?php echo esc_attr($key); ?>"><?php echo esc_html(ucwords(str_replace('_',' ',$key))); ?></label></th>
+      <td><input class="regular-text" id="elwr_label_<?php echo esc_attr($key); ?>" name="elwr_labels[<?php echo esc_attr($key); ?>]" value="<?php echo esc_attr(isset($saved_labels[$key])?$saved_labels[$key]:$fallback); ?>"></td></tr>
+    <?php endforeach; ?></table><?php submit_button('Save Player Labels'); ?></form>
     <hr><h2>Generate audio manually</h2>
     <p>If a player says audio has not been generated, choose a published post or page and generate the MP3 here. Generation runs on the server; visitors only receive the cached MP3 URL.</p>
     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -68,19 +110,19 @@ function elwr_register_assets() {
     wp_register_script('elwr-script', ELWR_URL.'assets/reader.js', array(), ELWR_VERSION, true);
 }
 add_action('wp_enqueue_scripts', 'elwr_register_assets');
-function elwr_localize_frontend_script() { wp_localize_script('elwr-script', 'ELWR', array('endpoint'=>esc_url_raw(rest_url('elwr/v1/audio')), 'errorText'=>'Audio is not ready yet. Publish/update the content or ask the site administrator to generate it.')); }
+function elwr_localize_frontend_script() { wp_localize_script('elwr-script', 'ELWR', array('endpoint'=>esc_url_raw(rest_url('elwr/v1/audio')), 'errorText'=>elwr_label('unavailable'),'labels'=>array_map('elwr_label',array_combine(array_keys(elwr_label_defaults()),array_keys(elwr_label_defaults()))))); }
 function elwr_enqueue_assets() { wp_enqueue_style('elwr-style'); wp_enqueue_script('elwr-script'); elwr_localize_frontend_script(); }
 function elwr_shortcode($atts) {
     if (!is_singular()) return ''; $s=elwr_settings(); $post_id=get_queried_object_id();
-    $atts=shortcode_atts(array('mode'=>$s['default_mode'],'label'=>$s['button_text'],'title'=>$s['show_title'],'status'=>$s['show_status'],'speed'=>$s['show_speed'],'skip'=>$s['show_skip']),$atts,'elevenlabs_reader');
+    $atts=shortcode_atts(array('mode'=>$s['default_mode'],'label'=>elwr_label('listen'),'title'=>$s['show_title'],'status'=>$s['show_status'],'speed'=>$s['show_speed'],'skip'=>$s['show_skip']),$atts,'elevenlabs_reader');
     $mode=$atts['mode']==='page'?'page':'post'; elwr_enqueue_assets();
     if ($s['player_enabled'] !== '1') return '';
     $title = $atts['title'] !== '0' ? '<div class="elwr-title">'.esc_html(get_the_title($post_id)).'</div>' : '';
-    $status = $atts['status'] !== '0' ? '<div class="elwr-status" aria-live="polite">'.esc_html__('Audio ready','elevenlabs-wp-reader').'</div>' : '<div class="elwr-status" aria-live="polite" hidden></div>';
-    $skip = $atts['skip'] !== '0' ? '<button type="button" class="elwr-skip" data-seconds="-15" aria-label="Back 15 seconds">↶ 15s</button>' : '';
-    $skip .= $atts['skip'] !== '0' ? '<button type="button" class="elwr-skip" data-seconds="15" aria-label="Forward 15 seconds">15s ↷</button>' : '';
-    $speed = $atts['speed'] !== '0' ? '<select class="elwr-speed" aria-label="Playback speed"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option></select>' : '';
-    return '<section class="elwr-reader" style="--elwr-color:'.esc_attr($s['theme_color']).'" data-post-id="'.esc_attr($post_id).'" data-mode="'.esc_attr($mode).'" data-api="'.esc_attr(rest_url('elwr/v1/audio/'.$post_id)).'"><button type="button" class="elwr-generate" aria-label="Play article audio"><span class="elwr-play-icon" aria-hidden="true">▶</span></button><div class="elwr-player-content">'.$title.$status.'<div class="elwr-controls"><span class="elwr-current">00:00</span><input class="elwr-seek" type="range" min="0" max="100" value="0" aria-label="Audio progress"><span class="elwr-duration">00:00</span>'.$skip.$speed.'</div><audio class="elwr-audio-element" preload="none"></audio><noscript>Audio player requires JavaScript. <a href="'.esc_url(rest_url('elwr/v1/audio/'.$post_id)).'">Get audio details</a>.</noscript></div></section>';
+    $status = $atts['status'] !== '0' ? '<div class="elwr-status" aria-live="polite">'.esc_html(elwr_label('ready')).'</div>' : '<div class="elwr-status" aria-live="polite" hidden></div>';
+    $skip = $atts['skip'] !== '0' ? '<button type="button" class="elwr-skip" data-seconds="-15" aria-label="'.esc_attr(elwr_label('back')).'">↶ 15s</button>' : '';
+    $skip .= $atts['skip'] !== '0' ? '<button type="button" class="elwr-skip" data-seconds="15" aria-label="'.esc_attr(elwr_label('forward')).'">15s ↷</button>' : '';
+    $speed = $atts['speed'] !== '0' ? '<select class="elwr-speed" aria-label="'.esc_attr(elwr_label('speed')).'"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option></select>' : '';
+    return '<section class="elwr-reader" style="--elwr-color:'.esc_attr($s['theme_color']).'" data-post-id="'.esc_attr($post_id).'" data-mode="'.esc_attr($mode).'" data-api="'.esc_attr(rest_url('elwr/v1/audio/'.$post_id)).'"><button type="button" class="elwr-generate" aria-label="'.esc_attr(elwr_label('play')).'"><span class="elwr-play-icon" aria-hidden="true">▶</span></button><div class="elwr-player-content">'.$title.$status.'<div class="elwr-controls"><span class="elwr-current">00:00</span><input class="elwr-seek" type="range" min="0" max="100" value="0" aria-label="'.esc_attr(elwr_label('progress')).'"><span class="elwr-duration">00:00</span>'.$skip.$speed.'</div><audio class="elwr-audio-element" preload="none"></audio><noscript>'.esc_html(elwr_label('noscript')).' <a href="'.esc_url(rest_url('elwr/v1/audio/'.$post_id)).'">'.esc_html(elwr_label('details')).'</a>.</noscript></div></section>';
 }
 add_shortcode('elevenlabs_reader','elwr_shortcode');
 
@@ -146,7 +188,7 @@ function elwr_rest_audio(WP_REST_Request $request) {
     $id=absint($request['id']); $mode=$request->get_param('mode')==='page'?'page':'post'; $post=get_post($id);
     if (!$post || $post->post_status!=='publish' || !in_array($post->post_type,array('post','page'),true)) return new WP_Error('elwr_not_found','Published post/page not found.',array('status'=>404));
     $content=elwr_extract_text($post,$mode); $cache=elwr_cache_paths($id,$mode,$content);
-    if (file_exists($cache['path']) && filesize($cache['path'])>100) return rest_ensure_response(array('ready'=>true,'post_id'=>$id,'mode'=>$mode,'audio_url'=>esc_url_raw($cache['url']),'mime_type'=>'audio/mpeg'));
+    if (file_exists($cache['path']) && filesize($cache['path'])>100) return rest_ensure_response(array('ready'=>true,'post_id'=>$id,'mode'=>$mode,'audio_url'=>esc_url_raw($cache['url']),'mime_type'=>'audio/mpeg','labels'=>array_map('elwr_label',array_combine(array_keys(elwr_label_defaults()),array_keys(elwr_label_defaults())))));
     return new WP_REST_Response(array('ready'=>false,'post_id'=>$id,'mode'=>$mode,'message'=>'Audio has not been generated yet. Publish/update the post or ask an administrator to generate it.'),404);
 }
 function elwr_rest_generate(WP_REST_Request $request) { $id=absint($request['id']); $mode=$request->get_param('mode')==='page'?'page':'post'; $result=elwr_generate_for_post($id,$mode); if (is_wp_error($result)) return new WP_Error($result->get_error_code(),$result->get_error_message(),array('status'=>500)); return rest_ensure_response(array('ready'=>true,'post_id'=>$id,'mode'=>$mode,'audio_url'=>esc_url_raw($result),'mime_type'=>'audio/mpeg')); }
