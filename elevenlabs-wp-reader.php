@@ -1,4 +1,24 @@
 <?php
+/**
+ * Plugin Name: ElevenLabs Post Reader
+ * Plugin URI: https://github.com/coded-letter/
+ * GitHub Plugin URI: https://github.com/coded-letter/
+ * Description: A WordPress plugin for reading blog posts with ElevenLabs API.
+ * Author: Coded Letter
+ * Author URI: https://github.com/coded-letter/
+ * Update URI: https://github.com/coded-letter/
+ * Version: 1.3.0
+ * Text Domain: wp-elevenlabs-reader
+ * Domain Path: /languages
+ * Requires at least: 6.2
+ * Requires PHP: 7.4
+ * License: GPL-3
+ * License URI: https://www.gnu.org/licenses/gpl-3.0.html
+ *
+ * @package ElevenLabsWPreader
+ * @author codedletter
+ * @license GPL-3
+ */
 
 if (!defined('ABSPATH')) exit;
 
