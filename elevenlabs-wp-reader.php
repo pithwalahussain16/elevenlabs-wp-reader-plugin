@@ -1,4 +1,12 @@
 <?php
+/**
+ * Plugin Name: ElevenLabs Reader Headless GraphQL
+ * Description: ElevenLabs audio reader with WPGraphQL assets for headless WordPress blog frontends.
+ * Version: 1.3.0
+ * Requires PHP: 7.4
+ * Text Domain: elevenlabs-reader-headless
+ */
+
 
 if (!defined('ABSPATH')) exit;
 
@@ -219,3 +227,6 @@ add_action('admin_notices', function() {
     $class = $notice['status'] === 'success' ? 'notice notice-success' : 'notice notice-error';
     echo '<div class="' . esc_attr($class) . '"><p>' . esc_html($notice['message']) . '</p></div>';
 });
+
+// Optional WPGraphQL headless integration.
+require_once ELWR_DIR . 'headless-graphql.php';
