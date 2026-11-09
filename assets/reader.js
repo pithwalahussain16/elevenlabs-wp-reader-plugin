@@ -27,9 +27,9 @@
     wrapper.querySelectorAll('.elwr-skip').forEach((skip) => skip.addEventListener('click', () => {
       if (Number.isFinite(audio.duration)) audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + Number(skip.dataset.seconds || 0)));
     }));
-    audio.addEventListener('play', () => { icon.textContent = 'Ⅱ'; button.setAttribute('aria-label', label('pause','Pause audio')); if (status && !status.hidden) status.textContent = label('playing', 'Playing audio'); });
-    audio.addEventListener('pause', () => { icon.textContent = '▶'; button.setAttribute('aria-label', label('play','Play article audio')); if (!audio.ended && status && !status.hidden) status.textContent = label('paused', 'Audio paused'); });
-    audio.addEventListener('ended', () => { icon.textContent = '▶'; button.setAttribute('aria-label', label('play','Play article audio')); if (status && !status.hidden) status.textContent = label('finished', 'Finished listening'); });
+    audio.addEventListener('play', () => { icon.textContent = 'Ⅱ'; button.setAttribute('aria-label', label('pause', 'Pause audio')); if (status && !status.hidden) status.textContent = label('playing', 'Playing audio'); });
+    audio.addEventListener('pause', () => { icon.textContent = '▶'; button.setAttribute('aria-label', label('play', 'Play article audio')); if (!audio.ended && status && !status.hidden) status.textContent = label('paused', 'Audio paused'); });
+    audio.addEventListener('ended', () => { icon.textContent = '▶'; button.setAttribute('aria-label', label('play', 'Play article audio')); if (status && !status.hidden) status.textContent = label('finished', 'Finished listening'); });
     button.dataset.ready = '1';
     button.addEventListener('click', () => {
       if (audio.paused) audio.play().catch(() => { if (status && !status.hidden) status.textContent = label('retry', 'Audio is ready. Press play again to start.'); });
@@ -54,7 +54,7 @@
       if (!response.ok || !data.ready || !data.audio_url) throw new Error(data.message || config.errorText || label('unavailable', 'Cached audio is not ready yet.'));
       initPlayer(wrapper, data.audio_url);
       const audio = wrapper.querySelector('audio');
-      await audio.play().catch(() => {});
+      await audio.play().catch(() => { });
     } catch (error) {
       if (status && !status.hidden) status.textContent = error.message || config.errorText || label('unavailable', 'Audio is not ready yet.');
       else button.setAttribute('aria-label', error.message || label('unavailable', 'Audio not ready; contact the site administrator'));

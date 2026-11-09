@@ -121,18 +121,105 @@ add_action('wp_enqueue_scripts', 'elwr_register_assets');
 function elwr_localize_frontend_script() { wp_localize_script('elwr-script', 'ELWR', array('endpoint'=>esc_url_raw(rest_url('elwr/v1/audio')), 'errorText'=>elwr_label('unavailable'),'labels'=>array_map('elwr_label',array_combine(array_keys(elwr_label_defaults()),array_keys(elwr_label_defaults()))))); }
 function elwr_enqueue_assets() { wp_enqueue_style('elwr-style'); wp_enqueue_script('elwr-script'); elwr_localize_frontend_script(); }
 function elwr_shortcode($atts) {
-    if (!is_singular()) return ''; $s=elwr_settings(); $post_id=get_queried_object_id();
-    $atts=shortcode_atts(array('mode'=>$s['default_mode'],'label'=>elwr_label('listen'),'title'=>$s['show_title'],'status'=>$s['show_status'],'speed'=>$s['show_speed'],'skip'=>$s['show_skip']),$atts,'elevenlabs_reader');
-    $mode=$atts['mode']==='page'?'page':'post'; elwr_enqueue_assets();
-    if ($s['player_enabled'] !== '1') return '';
-    $title = $atts['title'] !== '0' ? '<div class="elwr-title">'.esc_html(get_the_title($post_id)).'</div>' : '';
-    $status = $atts['status'] !== '0' ? '<div class="elwr-status" aria-live="polite">'.esc_html(elwr_label('ready')).'</div>' : '<div class="elwr-status" aria-live="polite" hidden></div>';
-    $skip = $atts['skip'] !== '0' ? '<button type="button" class="elwr-skip" data-seconds="-15" aria-label="'.esc_attr(elwr_label('back')).'">↶ 15s</button>' : '';
-    $skip .= $atts['skip'] !== '0' ? '<button type="button" class="elwr-skip" data-seconds="15" aria-label="'.esc_attr(elwr_label('forward')).'">15s ↷</button>' : '';
-    $speed = $atts['speed'] !== '0' ? '<select class="elwr-speed" aria-label="'.esc_attr(elwr_label('speed')).'"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option></select>' : '';
-    return '<section class="elwr-reader" style="--elwr-color:'.esc_attr($s['theme_color']).'" data-post-id="'.esc_attr($post_id).'" data-mode="'.esc_attr($mode).'" data-api="'.esc_attr(rest_url('elwr/v1/audio/'.$post_id)).'"><button type="button" class="elwr-generate" aria-label="'.esc_attr(elwr_label('play')).'"><span class="elwr-play-icon" aria-hidden="true">▶</span></button><div class="elwr-player-content">'.$title.$status.'<div class="elwr-controls"><span class="elwr-current">00:00</span><input class="elwr-seek" type="range" min="0" max="100" value="0" aria-label="'.esc_attr(elwr_label('progress')).'"><span class="elwr-duration">00:00</span>'.$skip.$speed.'</div><audio class="elwr-audio-element" preload="none"></audio><noscript>'.esc_html(elwr_label('noscript')).' <a href="'.esc_url(rest_url('elwr/v1/audio/'.$post_id)).'">'.esc_html(elwr_label('details')).'</a>.</noscript></div></section>';
+
+    $s = elwr_settings();
+
+    $atts = shortcode_atts(
+        array(
+            'mode' => $s['default_mode'],
+            'label' => elwr_label('listen'),
+            'title' => $s['show_title'],
+            'status' => $s['show_status'],
+            'speed' => $s['show_speed'],
+            'skip' => $s['show_skip'],
+            'post_id' => 0,
+        ),
+        $atts,
+        'elevenlabs_reader'
+    );
+
+    // Use explicit post ID for headless GraphQL requests.
+    $post_id = absint($atts['post_id']);
+
+    if (!$post_id) {
+        if (!is_singular()) {
+            return '';
+        }
+
+        $post_id = get_queried_object_id();
+    }
+
+    $post = get_post($post_id);
+
+    if (
+        !$post ||
+        $post->post_status !== 'publish' ||
+        !in_array($post->post_type, array('post', 'page'), true)
+    ) {
+        return '';
+    }
+
+    if ($s['player_enabled'] !== '1') {
+        return '';
+    }
+
+    $mode = $atts['mode'] === 'page' ? 'page' : 'post';
+
+    elwr_enqueue_assets();
+
+    $title = $atts['title'] !== '0'
+        ? '<div class="elwr-title">' . esc_html(get_the_title($post_id)) . '</div>'
+        : '';
+
+    $status = $atts['status'] !== '0'
+        ? '<div class="elwr-status" aria-live="polite">' . esc_html(elwr_label('ready')) . '</div>'
+        : '<div class="elwr-status" aria-live="polite" hidden></div>';
+
+    $skip = '';
+
+    if ($atts['skip'] !== '0') {
+        $skip .= '<button type="button" class="elwr-skip" data-seconds="-15" aria-label="' . esc_attr(elwr_label('back')) . '">↶ 15s</button>';
+        $skip .= '<button type="button" class="elwr-skip" data-seconds="15" aria-label="' . esc_attr(elwr_label('forward')) . '">15s ↷</button>';
+    }
+
+    $speed = '';
+
+    if ($atts['speed'] !== '0') {
+        $speed = '<select class="elwr-speed" aria-label="' . esc_attr(elwr_label('speed')) . '">
+            <option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.25">1.25×</option>
+            <option value="1.5">1.5×</option>
+            <option value="1.75">1.75×</option>
+            <option value="2">2×</option>
+        </select>';
+    }
+
+    return '<section class="elwr-reader"
+        style="--elwr-color:' . esc_attr($s['theme_color']) . '"
+        data-post-id="' . esc_attr($post_id) . '"
+        data-mode="' . esc_attr($mode) . '"
+        data-api="' . esc_attr(rest_url('elwr/v1/audio/' . $post_id)) . '">
+
+        <button type="button" class="elwr-generate" aria-label="' . esc_attr(elwr_label('play')) . '">
+            <span class="elwr-play-icon" aria-hidden="true">▶</span>
+        </button>
+
+        <div class="elwr-player-content">
+            ' . $title . $status . '
+
+            <div class="elwr-controls">
+                <span class="elwr-current">00:00</span>
+                <input class="elwr-seek" type="range" min="0" max="100" value="0" aria-label="' . esc_attr(elwr_label('progress')) . '">
+                <span class="elwr-duration">00:00</span>
+                ' . $skip . $speed . '
+            </div>
+
+            <audio class="elwr-audio-element" preload="none"></audio>
+        </div>
+    </section>';
 }
-add_shortcode('elevenlabs_reader','elwr_shortcode');
+add_shortcode('elevenlabs_reader', 'elwr_shortcode');
 
 function elwr_extract_text($post, $mode='post') {
     $raw = $post->post_content;
